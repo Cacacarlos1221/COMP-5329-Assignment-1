@@ -60,7 +60,8 @@ class Dropout:
 
 class Layer:
     def __init__(self, input_dim, output_dim, activation='relu'):
-        self.weights = np.random.randn(input_dim, output_dim) * 0.01
+        # He initialization for ReLU activation
+        self.weights = np.random.randn(input_dim, output_dim) * np.sqrt(2.0 / input_dim)
         self.bias = np.zeros(output_dim)
         self.activation = getattr(Activation, activation)
         
@@ -77,11 +78,26 @@ class Layer:
         if self.activation.__name__ == 'relu':
             delta = delta * Activation.relu_derivative(self.z)
         
+        # Reshape input and delta for matrix multiplication
+        if len(self.input.shape) > 2:
+            self.input = self.input.reshape(self.input.shape[0], -1)
+        if len(delta.shape) > 2:
+            delta = delta.reshape(delta.shape[0], -1)
+        
+        # Calculate gradients
         d_weights = np.dot(self.input.T, delta) / delta.shape[0]
+        d_weights += weight_decay * self.weights  # Add L2 regularization
         d_bias = np.mean(delta, axis=0)
         
-        # Add weight decay
-        d_weights += weight_decay * self.weights
+        # Update with momentum
+        self.v_w = momentum * self.v_w - learning_rate * d_weights
+        self.v_b = momentum * self.v_b - learning_rate * d_bias
+        
+        self.weights += self.v_w
+        self.bias += self.v_b
+        
+        # Calculate and return gradient for next layer
+        return np.dot(delta, self.weights.T)
         
         # Update with momentum
         self.v_w = momentum * self.v_w - learning_rate * d_weights
@@ -117,15 +133,26 @@ class NeuralNetwork:
         return Activation.softmax(x)
     
     def backward(self, x, y, learning_rate=0.01, momentum=0.9, weight_decay=0.0001):
-        m = x.shape[0]
+        # Forward pass to get all activations
         activations = [x]
+        current_input = x
         
-        # Forward pass
-        output = self.forward(x)
+        # Store intermediate activations
+        for i, layer in enumerate(self.layers):
+            current_input = layer.forward(current_input)
+            if i < len(self.batch_norms):
+                current_input = self.batch_norms[i].forward(current_input, True)
+            if i < len(self.dropouts):
+                current_input = self.dropouts[i].forward(current_input, True)
+            activations.append(current_input)
+        
+        # Compute output (softmax)
+        output = Activation.softmax(current_input)
         
         # Backward pass
         delta = Loss.cross_entropy_derivative(output, y)
-        for layer in reversed(self.layers):
+        for layer_idx in reversed(range(len(self.layers))):
+            layer = self.layers[layer_idx]
             delta = layer.backward(delta, learning_rate, momentum, weight_decay)
             
     def train(self, X, y, epochs=100, batch_size=32, learning_rate=0.01, momentum=0.9, weight_decay=0.0001):
@@ -133,12 +160,14 @@ class NeuralNetwork:
         losses = []
         
         for epoch in range(epochs):
+            epoch_loss = 0
             # Shuffle the data
             indices = np.random.permutation(n_samples)
             X = X[indices]
             y = y[indices]
             
             # Mini-batch training
+            n_batches = 0
             for i in range(0, n_samples, batch_size):
                 batch_X = X[i:i+batch_size]
                 batch_y = y[i:i+batch_size]
@@ -149,10 +178,15 @@ class NeuralNetwork:
                 
                 # Calculate loss
                 loss = Loss.cross_entropy(output, batch_y)
-                losses.append(loss)
-                
+                epoch_loss += loss
+                n_batches += 1
+            
+            # Calculate and store average loss for the epoch
+            avg_loss = epoch_loss / n_batches
+            losses.append(avg_loss)
+            
             if epoch % 10 == 0:
-                print(f'Epoch {epoch}, Loss: {np.mean(losses[-n_samples//batch_size:])}')
+                print(f'Epoch {epoch}, Loss: {avg_loss}')
         
         return losses
     

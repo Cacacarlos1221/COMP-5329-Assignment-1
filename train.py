@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from neural_network import NeuralNetwork, Layer, BatchNormalization, Dropout
+from visualize import plot_training_loss, plot_confusion_matrix, plot_accuracy_comparison
 
 # Load and preprocess data
 def load_data(train_data_path, train_label_path, test_data_path, test_label_path):
@@ -11,6 +12,19 @@ def load_data(train_data_path, train_label_path, test_data_path, test_label_path
     X_test = np.load(test_data_path)
     y_test = np.load(test_label_path)
     
+    # Print dataset information
+    print("\nDataset Information:")
+    print(f"Training set shape: {X_train.shape}")
+    print(f"Training labels shape: {y_train.shape}")
+    print(f"Test set shape: {X_test.shape}")
+    print(f"Test labels shape: {y_test.shape}")
+    print(f"Number of features: {X_train.shape[1]}")
+    print(f"Number of classes: {len(np.unique(y_train))}")
+    print("\nClass distribution in training set:")
+    for class_id, count in enumerate(np.bincount(y_train.ravel())):
+        print(f"Class {class_id}: {count} samples ({count/len(y_train)*100:.2f}%)")
+    print()
+    
     # Standardize features
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
@@ -18,7 +32,7 @@ def load_data(train_data_path, train_label_path, test_data_path, test_label_path
     
     # Convert labels to one-hot encoding
     def to_one_hot(y, num_classes=10):
-        return np.eye(num_classes)[y]
+        return np.eye(num_classes)[y.ravel()]
     
     y_train = to_one_hot(y_train)
     y_test = to_one_hot(y_test)
@@ -75,6 +89,11 @@ def main():
     
     print(f'Training Accuracy: {train_accuracy:.4f}')
     print(f'Test Accuracy: {test_accuracy:.4f}')
+    
+    # Visualize training process and results
+    plot_training_loss(losses)
+    plot_confusion_matrix(np.argmax(y_test, axis=1), test_predictions)
+    plot_accuracy_comparison([train_accuracy, test_accuracy], ['Training', 'Test'])
 
 if __name__ == '__main__':
     main()
